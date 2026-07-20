@@ -27,6 +27,27 @@ jobs:
       working-directory: app
 ```
 
+### `node-tests.yml`
+
+Lints, checks formatting and type-checks a Node project managed with [pnpm](https://pnpm.io/).
+Runs ESLint, a Prettier formatting check, then the TypeScript compiler in check-only mode.
+
+**Inputs**
+
+| Name                 | Description                                            | Required |
+| -------------------- | ------------------------------------------------------ | -------- |
+| `working-directory`  | Directory containing the Node project (`package.json`) | Yes      |
+
+**Usage**
+
+```yaml
+jobs:
+  tests:
+    uses: Carmenda-nl/carmenda-workflows/.github/workflows/node-tests.yml@main
+    with:
+      working-directory: privacytool
+```
+
 ### `python-release-beta.yml`
 
 Builds a Windows PyInstaller executable and publishes it as a beta GitHub release (prerelease). 

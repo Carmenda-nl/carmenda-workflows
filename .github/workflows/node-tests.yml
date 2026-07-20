@@ -1,0 +1,56 @@
+# Reusable workflow: lint, format check and type check a 
+# Node (pnpm) project.
+#
+# Call from another repository:
+#
+#   jobs:
+#     tests:
+#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/node-tests.yml@main
+#       with:
+#         working-directory: privacytool
+
+name: Node tests
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory containing the Node project (package.json)
+        type: string
+        required: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.0.9
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "24.x"
+          check-latest: true
+          cache: "pnpm"
+          cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm lint
+
+      - name: Run Prettier formatting check
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm exec prettier --check .
+
+      - name: Run TypeScript type check
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm exec tsc --noEmit -p tsconfig.node.json ; pnpm exec tsc --noEmit -p tsconfig.web.json
