@@ -27,6 +27,27 @@ jobs:
       working-directory: app
 ```
 
+### `node-tests.yml`
+
+Lints, checks formatting and type-checks a Node project managed with [pnpm](https://pnpm.io/).
+Runs ESLint, a Prettier formatting check, then the TypeScript compiler in check-only mode.
+
+**Inputs**
+
+| Name                 | Description                                            | Required |
+| -------------------- | ------------------------------------------------------ | -------- |
+| `working-directory`  | Directory containing the Node project (`package.json`) | Yes      |
+
+**Usage**
+
+```yaml
+jobs:
+  tests:
+    uses: Carmenda-nl/carmenda-workflows/.github/workflows/node-tests.yml@main
+    with:
+      working-directory: privacytool
+```
+
 ### `python-release-beta.yml`
 
 Builds a Windows PyInstaller executable and publishes it as a beta GitHub release (prerelease). 
@@ -87,10 +108,14 @@ jobs:
 ### `python-release-stable.yml`
 
 Promotes the latest beta release to a stable release: 
-downloads the beta assets, renames them, creates a new stable release, deletes the beta release/tag and 
-updates `CHANGELOG.md` on both `develop` and `main`.
+downloads the beta assets, patches the bundled version file to strip the `-beta` suffix, repackages them, 
+creates a new stable release, deletes the beta release/tag and updates `CHANGELOG.md` on both `develop` and `main`.
 
-**Inputs**: none
+**Inputs**
+
+| Name           | Description                                    | Default                |
+| -------------- | ---------------------------------------------- | ---------------------- |
+| `version-file` | Path of the version file inside the app source | `app/main/_version.py` |
 
 **Secrets**: `secrets: inherit`
 
@@ -104,5 +129,7 @@ jobs:
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.ref == 'develop'
     uses: Carmenda-nl/carmenda-workflows/.github/workflows/python-release-stable.yml@main
+    with:
+      version-file: app/main/_version.py
     secrets: inherit
 ```

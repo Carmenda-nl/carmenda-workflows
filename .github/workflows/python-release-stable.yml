@@ -1,5 +1,6 @@
 # Reusable workflow: promote the latest beta release to a stable release.
-# Downloads the beta assets, renames them, creates a new stable release.
+# Downloads the beta assets, patches the bundled version file to strip the
+# -beta suffix, repackages them, and creates a new stable release.
 #
 # Call from another repository:
 #
@@ -10,12 +11,19 @@
 #         github.event.pull_request.base.ref == 'main' &&
 #         github.event.pull_request.head.ref == 'develop'
 #       uses: Carmenda-nl/carmenda-workflows/.github/workflows/python-release-stable.yml@main
+#       with:
+#         version-file: app/main/_version.py
 #       secrets: inherit
 
 name: Promote Beta to Stable release
 
 on:
   workflow_call:
+    inputs:
+      version-file:
+        description: Path of the version file inside the app source
+        type: string
+        default: app/main/_version.py
 
 jobs:
   promote-beta-to-stable:
@@ -32,7 +40,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BETA_TAG=$(gh api repos/${{ github.repository }}/releases --jq '[.[] | select(.prerelease==true and (.tag_name | contains("-beta")))] | sort_by(.created_at) | last | .tag_name')
+          JQ_FILTER='[.[] | select(.prerelease==true and (.tag_name | contains("-beta")))]'
+          JQ_FILTER="$JQ_FILTER | sort_by(.created_at) | last | .tag_name"
+          BETA_TAG=$(gh api repos/${{ github.repository }}/releases --jq "$JQ_FILTER")
 
           if [ -z "$BETA_TAG" ] || [ "$BETA_TAG" = "null" ]; then
             echo "::error::No beta release found to promote"
@@ -56,7 +66,7 @@ jobs:
         env:
           OUTPUT: release_notes.md
 
-      - name: Download beta release assets
+      - name: Download and repackage beta release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -67,8 +77,23 @@ jobs:
           for file in *-beta.zip; do
             if [ -f "$file" ]; then
               newname="${file//-beta.zip/.zip}"
-              mv "$file" "$newname"
-              echo "Renamed: $file → $newname"
+              extract_dir="${file%.zip}_extracted"
+
+              mkdir -p "$extract_dir"
+              unzip -q "$file" -d "$extract_dir"
+
+              version_file="$extract_dir/_internal/${{ inputs.version-file }}"
+
+              if [ -f "$version_file" ]; then
+                echo "__version__ = '${{ steps.determine_tag.outputs.stable_tag }}'" > "$version_file"
+                echo "Patched bundled version file to ${{ steps.determine_tag.outputs.stable_tag }}"
+              else
+                echo "::warning::Bundled version file not found at $version_file"
+              fi
+
+              (cd "$extract_dir" && zip -qr "../$newname" .)
+              rm -rf "$extract_dir" "$file"
+              echo "Repackaged: $file → $newname"
             fi
           done
 
@@ -96,14 +121,19 @@ jobs:
           gh release delete "${{ steps.determine_tag.outputs.beta_tag }}" -R ${{ github.repository }} --yes
           echo "Deleted beta release"
 
-          gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/${{ steps.determine_tag.outputs.beta_tag }}" || echo "Tag already deleted"
+          gh api -X DELETE \
+            "repos/${{ github.repository }}/git/refs/tags/${{ steps.determine_tag.outputs.beta_tag }}" \
+            || echo "Tag already deleted"
           echo "Deleted beta tag"
 
-          echo "Promotion complete: ${{ steps.determine_tag.outputs.beta_tag }} → ${{ steps.determine_tag.outputs.stable_tag }}"
+          echo "Promotion complete: ${{ steps.determine_tag.outputs.beta_tag }} →" \
+            "${{ steps.determine_tag.outputs.stable_tag }}"
 
-      - name: Update CHANGELOG.md
+      - name: Update version file and CHANGELOG.md
         if: steps.create_stable_from_beta.outputs.success == 'true'
         run: |
+          echo "__version__ = '${{ steps.determine_tag.outputs.stable_tag }}'" > "${{ inputs.version-file }}"
+
           python3 << 'EOF'
           import re
           stable_ver = '${{ steps.determine_tag.outputs.stable_tag }}'.lstrip('v')
@@ -127,12 +157,29 @@ jobs:
               f.write(content)
           EOF
 
-      - name: Commit CHANGELOG.md
+          mkdir -p /tmp/release-sync
+          cp "${{ inputs.version-file }}" /tmp/release-sync/version-file
+          cp CHANGELOG.md /tmp/release-sync/CHANGELOG.md
+      - name: Commit and push to main
         if: steps.create_stable_from_beta.outputs.success == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md
-          git diff --cached --quiet || git commit -m "chore(release): update CHANGELOG.md for ${{ steps.determine_tag.outputs.stable_tag }}"
-          git push origin HEAD:develop
+          git add "${{ inputs.version-file }}" CHANGELOG.md
+          git diff --cached --quiet || \
+            git commit -m "chore(release): update CHANGELOG.md for ${{ steps.determine_tag.outputs.stable_tag }}"
           git push origin HEAD:main
+
+      - name: Sync version file and CHANGELOG.md to develop
+        if: steps.create_stable_from_beta.outputs.success == 'true'
+        run: |
+          git fetch origin develop
+          git checkout -B develop origin/develop
+
+          cp /tmp/release-sync/version-file "${{ inputs.version-file }}"
+          cp /tmp/release-sync/CHANGELOG.md CHANGELOG.md
+
+          git add "${{ inputs.version-file }}" CHANGELOG.md
+          git diff --cached --quiet || \
+            git commit -m "chore(release): update CHANGELOG.md for ${{ steps.determine_tag.outputs.stable_tag }}"
+          git push origin HEAD:develop
