@@ -55,13 +55,11 @@ Also updates `CHANGELOG.md` and the version file on `develop`.
 
 **Inputs**
 
-| Name                | Description                                         | Required | Default                |
-| ------------------- | --------------------------------------------------- | -------- | ---------------------- |
-| `working-directory` | Directory containing `pyproject.toml`               | No       | `app`                  |
-| `build-output-name` | Name of the PyInstaller output folder under `dist`  | Yes      | —                      |
-| `artifact-name`     | Name of the GitHub Actions upload/download artifact | Yes      | —                      |
-| `zip-prefix`        | Prefix for the release zip                          | Yes      | —                      |
-| `version-file`      | Path to the version file                            | No       | `app/main/_version.py` |
+| Name                | Description                                        | Required | Default                |
+| ------------------- | -------------------------------------------------- | -------- | ---------------------- |
+| `working-directory` | Directory containing `pyproject.toml`              | No       | `app`                  |
+| `build-name`        | Name of the PyInstaller output folder under `dist` | Yes      | —                      |
+| `version-file`      | Path to the version file                           | No       | `app/main/_version.py` |
 
 **Secrets**: `secrets: inherit`
 
@@ -73,9 +71,7 @@ jobs:
     uses: Carmenda-nl/carmenda-workflows/.github/workflows/python-release-beta.yml@main
     with:
       working-directory: app
-      build-output-name: my-product
-      artifact-name: my-product
-      zip-prefix: My_product_win
+      build-name: my-product
       version-file: app/main/_version.py
     secrets: inherit
 ```

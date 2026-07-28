@@ -60,3 +60,9 @@ jobs:
           git diff --cached --quiet || \
             git commit -m "chore(release): bump version to ${{ steps.version.outputs.stable }}"
           git push origin develop
+
+      - name: Merge the pull request now that develop is stable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} --merge --repo ${{ github.repository }}
