@@ -1,17 +1,20 @@
-# Reusable workflow: strip the -beta suffix from the version file and CHANGELOG.md
-# on develop, so that main receives the correct stable version after merge.
+# Reusable workflow: strip the -beta suffix from the version file and CHANGELOG.md on develop,
+# so that main receives the correct stable version once the PR is merged manually after approval.
 #
 # Call from another repository:
+#
+#   on:
+#     pull_request:
+#       types: [opened, synchronize]
 #
 #   jobs:
 #     prepare-stable-version:
 #       if: >
-#         github.event.review.state == 'approved' &&
 #         github.event.pull_request.base.ref == 'main' &&
 #         github.event.pull_request.head.ref == 'develop'
-#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/python-prepare-stable.yml@main
+#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/python/prepare-stable.yml@main
 #       with:
-#         version-file: app/main/_version.py
+#         version-file: app/main/VERSION
 
 name: Prepare stable version
 
@@ -21,7 +24,7 @@ on:
       version-file:
         description: Path of the version file
         type: string
-        default: app/main/_version.py
+        default: app/main/VERSION
 
 jobs:
   prepare-stable-version:
@@ -29,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout develop
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7.0.1
         with:
           ref: develop
           fetch-depth: 0
@@ -37,14 +40,14 @@ jobs:
       - name: Determine stable version
         id: version
         run: |
-          VERSION=$(cat ${{ inputs.version-file }} | grep -oP "(?<=').*(?=')")
+          VERSION=$(cat ${{ inputs.version-file }})
           STABLE="${VERSION%-beta}"
           echo "stable=$STABLE" >> $GITHUB_OUTPUT
           echo "stable_no_v=${STABLE#v}" >> $GITHUB_OUTPUT
 
       - name: Update version file to stable
         run: |
-          echo "__version__ = '${{ steps.version.outputs.stable }}'" > ${{ inputs.version-file }}
+          printf '%s' "${{ steps.version.outputs.stable }}" > ${{ inputs.version-file }}
 
       - name: Strip -beta and refresh date in CHANGELOG.md
         run: |
@@ -58,11 +61,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ${{ inputs.version-file }} CHANGELOG.md
           git diff --cached --quiet || \
-            git commit -m "chore(release): bump version to ${{ steps.version.outputs.stable }}"
+            git commit -m "bump: version to ${{ steps.version.outputs.stable }}"
           git push origin develop
-
-      - name: Merge the pull request now that develop is stable
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr merge ${{ github.event.pull_request.number }} --merge --repo ${{ github.repository }}

@@ -5,7 +5,7 @@
 #
 #   jobs:
 #     tests:
-#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/node-tests.yml@main
+#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/electron/node-tests.yml@main
 #       with:
 #         working-directory: privacytool
 
@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7.0.1
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6.0.9

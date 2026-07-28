@@ -5,7 +5,7 @@
 #
 #   jobs:
 #     tests:
-#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/python-tests.yml@main
+#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/python/tests.yml@main
 #       with:
 #         working-directory: app
 
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7.0.1
 
       - name: Require .python-version file
         working-directory: ${{ inputs.working-directory }}
@@ -39,7 +39,7 @@ jobs:
           fi
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.3.2
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           working-directory: ${{ inputs.working-directory }}
 
@@ -65,10 +65,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7.0.1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.3.2
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
           cache-dependency-glob: |

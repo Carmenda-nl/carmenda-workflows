@@ -10,9 +10,9 @@
 #         github.event.pull_request.merged == true &&
 #         github.event.pull_request.base.ref == 'main' &&
 #         github.event.pull_request.head.ref == 'develop'
-#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/python-release-stable.yml@main
+#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/python/release-stable.yml@main
 #       with:
-#         version-file: app/main/_version.py
+#         version-file: app/main/VERSION
 #       secrets: inherit
 
 name: Promote Beta to Stable release
@@ -23,7 +23,7 @@ on:
       version-file:
         description: Path of the version file inside the app source
         type: string
-        default: app/main/_version.py
+        default: app/main/VERSION
 
 jobs:
   promote-beta-to-stable:
@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -85,7 +85,7 @@ jobs:
               version_file="$extract_dir/_internal/${{ inputs.version-file }}"
 
               if [ -f "$version_file" ]; then
-                echo "__version__ = '${{ steps.determine_tag.outputs.stable_tag }}'" > "$version_file"
+                printf '%s' "${{ steps.determine_tag.outputs.stable_tag }}" > "$version_file"
                 echo "Patched bundled version file to ${{ steps.determine_tag.outputs.stable_tag }}"
               else
                 echo "::warning::Bundled version file not found at $version_file"

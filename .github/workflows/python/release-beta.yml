@@ -5,11 +5,11 @@
 #
 #   jobs:
 #     release:
-#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/python-release-beta.yml@main
+#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/python/release-beta.yml@main
 #       with:
 #         working-directory: app
 #         build-name: my-product
-#         version-file: app/main/_version.py
+#         version-file: app/main/VERSION
 #       secrets: inherit
 
 name: Beta release
@@ -26,9 +26,9 @@ on:
         type: string
         required: true
       version-file:
-        description: Path to the verion file
+        description: Path to the version file
         type: string
-        default: app/main/_version.py
+        default: app/main/VERSION
 
 jobs:
   build-beta-windows:
@@ -38,15 +38,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7.0.1
 
       - name: Set version file to release tag
         shell: bash
         run: |
-          echo "__version__ = '${{ github.ref_name }}'" > ${{ inputs.version-file }}
+          printf '%s' "${{ github.ref_name }}" > ${{ inputs.version-file }}
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.3.2
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           working-directory: ${{ inputs.working-directory }}
 
@@ -71,7 +71,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -133,12 +133,12 @@ jobs:
 
       - name: Update version file
         run: |
-          echo "__version__ = '${{ github.ref_name }}'" > ${{ inputs.version-file }}
+          printf '%s' "${{ github.ref_name }}" > ${{ inputs.version-file }}
 
       - name: Commit CHANGELOG.md and version file
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add CHANGELOG.md ${{ inputs.version-file }}
-          git diff --cached --quiet || git commit -m "chore(release): update CHANGELOG.md for ${{ github.ref_name }}"
+          git diff --cached --quiet || git commit -m "bump: version to ${{ github.ref_name }}"
           git push origin HEAD:develop
