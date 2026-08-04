@@ -5,7 +5,7 @@
 #
 #   jobs:
 #     tests:
-#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/electron/node-tests.yml@main
+#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/node-tests.yml@main
 #       with:
 #         working-directory: privacytool
 

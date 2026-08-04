@@ -4,7 +4,7 @@ Central repository for reusable GitHub Actions workflows used across Carmenda re
 
 ## Workflows
 
-### `python/tests.yml`
+### `python-tests.yml`
 
 Lints, type-checks and tests a Python project managed with [uv](https://github.com/astral-sh/uv). 
 Requires a `.python-version` file in the working directory. 
@@ -22,12 +22,12 @@ Runs Ruff (check + format), Mypy, then pytest, and uploads the coverage report a
 ```yaml
 jobs:
   tests:
-    uses: Carmenda-nl/carmenda-workflows/.github/workflows/python/tests.yml@main
+    uses: Carmenda-nl/carmenda-workflows/.github/workflows/python-tests.yml@main
     with:
       working-directory: app
 ```
 
-### `electron/node-tests.yml`
+### `node-tests.yml`
 
 Lints, checks formatting and type-checks a Node project managed with [pnpm](https://pnpm.io/).
 Runs ESLint, a Prettier formatting check, then the TypeScript compiler in check-only mode.
@@ -43,12 +43,12 @@ Runs ESLint, a Prettier formatting check, then the TypeScript compiler in check-
 ```yaml
 jobs:
   tests:
-    uses: Carmenda-nl/carmenda-workflows/.github/workflows/electron/node-tests.yml@main
+    uses: Carmenda-nl/carmenda-workflows/.github/workflows/node-tests.yml@main
     with:
       working-directory: privacytool
 ```
 
-### `python/release-beta.yml`
+### `python-release-beta.yml`
 
 Builds a Windows PyInstaller executable and publishes it as a beta GitHub release (prerelease). 
 Also updates `CHANGELOG.md` and the version file on `develop`.
@@ -68,7 +68,7 @@ Also updates `CHANGELOG.md` and the version file on `develop`.
 ```yaml
 jobs:
   release:
-    uses: Carmenda-nl/carmenda-workflows/.github/workflows/python/release-beta.yml@main
+    uses: Carmenda-nl/carmenda-workflows/.github/workflows/python-release-beta.yml@main
     with:
       working-directory: app
       build-name: my-product
@@ -76,7 +76,7 @@ jobs:
     secrets: inherit
 ```
 
-### `electron/release-beta.yml`
+### `node-release-beta.yml`
 
 Builds a Windows installer for an Electron app that bundles a separately-released
 API gateway and one or more separately-released engines, then publishes it
@@ -98,7 +98,7 @@ as a beta GitHub release (prerelease). Also updates `CHANGELOG.md` on `develop`.
 ```yaml
 jobs:
   release:
-    uses: Carmenda-nl/carmenda-workflows/.github/workflows/electron/release-beta.yml@main
+    uses: Carmenda-nl/carmenda-workflows/.github/workflows/node-release-beta.yml@main
     with:
       build-name: privacytool
       version: ${{ github.ref_name }}
@@ -111,7 +111,7 @@ jobs:
     secrets: inherit
 ```
 
-### `python/prepare-stable.yml`
+### `python-prepare-stable.yml`
 
 Strips the `-beta` suffix from the version file and `CHANGELOG.md` on `develop`, 
 so that `main` receives the correct stable version once the PR is merged manually after approval.
@@ -135,12 +135,12 @@ jobs:
     if: >
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.ref == 'develop'
-    uses: Carmenda-nl/carmenda-workflows/.github/workflows/python/prepare-stable.yml@main
+    uses: Carmenda-nl/carmenda-workflows/.github/workflows/python-prepare-stable.yml@main
     with:
       version-file: app/main/_version.py
 ```
 
-### `python/release-stable.yml`
+### `python-release-stable.yml`
 
 Promotes the latest beta release to a stable release: 
 downloads the beta assets, patches the bundled version file to strip the `-beta` suffix, repackages them, 
@@ -163,7 +163,7 @@ jobs:
       github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.ref == 'develop'
-    uses: Carmenda-nl/carmenda-workflows/.github/workflows/python/release-stable.yml@main
+    uses: Carmenda-nl/carmenda-workflows/.github/workflows/python-release-stable.yml@main
     with:
       version-file: app/main/_version.py
     secrets: inherit

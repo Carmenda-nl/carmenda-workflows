@@ -5,7 +5,7 @@
 #
 #   jobs:
 #     release:
-#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/electron/node-release-beta.yml@main
+#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/node-release-beta.yml@main
 #       with:
 #         build-name: privacytool
 #         version: ${{ github.ref_name }}
