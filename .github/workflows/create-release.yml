@@ -1,0 +1,173 @@
+# Reusable workflow: publish a build artifact as a GitHub release.
+#
+# Internal building block shared by node-release-beta.yml and
+# python-release-beta.yml — not meant to be called directly from a product
+# repository. Downloads a previously-uploaded build artifact, zips it,
+# generates release notes with git-cliff, creates the GitHub release, and
+# (unless an entry for this version already exists) prepends CHANGELOG.md
+# and pushes the commit.
+
+name: Create release
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: Name of the build artifact to download
+        required: true
+        type: string
+      zip-name:
+        description: Filename for the release zip
+        required: true
+        type: string
+      flatten:
+        description: "true: zip -j (junk paths, flat file list); false: zip -r (preserve directory structure)"
+        type: boolean
+        default: false
+      release-tag:
+        description: Git tag for the release
+        required: true
+        type: string
+      release-name:
+        description: Release title
+        required: true
+        type: string
+      is-prerelease:
+        description: Whether this is a prerelease
+        required: true
+        type: boolean
+      extra-notes:
+        description: Extra markdown appended to the release body (below the git-cliff notes) — not included in the CHANGELOG.md entry
+        type: string
+        default: ""
+      version-file:
+        description: If set, also write the tag into this file and include it in the changelog commit
+        type: string
+        default: ""
+      changelog-file:
+        description: Path to the changelog file
+        type: string
+        default: CHANGELOG.md
+      push-branch:
+        description: Branch to push the changelog (and version-file) commit to
+        type: string
+        default: develop
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: release-assets
+
+      - name: Create zip archive
+        shell: bash
+        env:
+          ZIP_NAME: ${{ inputs.zip-name }}
+          FLATTEN: ${{ inputs.flatten }}
+        run: |
+          cd release-assets
+          if [ "$FLATTEN" = "true" ]; then
+            zip -j "../$ZIP_NAME" *
+          else
+            zip -r "../$ZIP_NAME" *
+          fi
+          cd ..
+          ls -lh *.zip
+
+      - name: Remove tag locally for release notes generation
+        shell: bash
+        run: git tag -d "${{ inputs.release-tag }}" || true
+
+      - name: Fetch shared changelog config
+        shell: bash
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/Carmenda-nl/carmenda-workflows/main/cliff.toml \
+            | sed "s#__REPO__#${{ github.repository }}#g" > cliff.toml
+
+      - name: Get release notes
+        id: release_notes
+        uses: orhun/git-cliff-action@v4.8.0
+        with:
+          config: cliff.toml
+          args: --unreleased --tag ${{ inputs.release-tag }} --strip header
+
+      - name: Compose release body
+        id: notes
+        shell: bash
+        env:
+          EXTRA_NOTES: ${{ inputs.extra-notes }}
+        run: |
+          BODY=$(cat git-cliff/CHANGELOG.md)
+          if [ -n "$EXTRA_NOTES" ]; then
+            BODY=$(printf '%s\n\n%s' "$BODY" "$EXTRA_NOTES")
+          fi
+          {
+            echo "body<<EOFMARKER"
+            echo ""
+            echo "$BODY"
+            echo "EOFMARKER"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create release
+        uses: softprops/action-gh-release@v3.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ inputs.release-tag }}
+          name: ${{ inputs.release-name }}
+          body: ${{ steps.notes.outputs.body }}
+          prerelease: ${{ inputs.is-prerelease }}
+          draft: false
+          fail_on_unmatched_files: false
+          generate_release_notes: false
+          files: "*.zip"
+
+      - name: Check for existing changelog entry
+        id: changelog_check
+        shell: bash
+        env:
+          CHANGELOG_FILE: ${{ inputs.changelog-file }}
+        run: |
+          VERSION="${{ inputs.release-tag }}"
+          VERSION="${VERSION#v}"
+          if grep -q "^## \[${VERSION}\]" "$CHANGELOG_FILE"; then
+            echo "Entry for ${VERSION} already present, skipping changelog update"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update changelog
+        if: steps.changelog_check.outputs.exists == 'false'
+        uses: orhun/git-cliff-action@v4.8.0
+        with:
+          config: cliff.toml
+          args: --unreleased --tag ${{ inputs.release-tag }} --prepend ${{ inputs.changelog-file }}
+
+      - name: Update version file
+        if: steps.changelog_check.outputs.exists == 'false' && inputs.version-file != ''
+        shell: bash
+        run: printf '%s' "${{ inputs.release-tag }}" > "${{ inputs.version-file }}"
+
+      - name: Commit changelog
+        if: steps.changelog_check.outputs.exists == 'false'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ inputs.changelog-file }}"
+          if [ -n "${{ inputs.version-file }}" ]; then
+            git add "${{ inputs.version-file }}"
+          fi
+          git diff --cached --quiet || git commit -m "chore(release): update ${{ inputs.changelog-file }} for ${{ inputs.release-tag }}"
+          git push origin HEAD:${{ inputs.push-branch }}

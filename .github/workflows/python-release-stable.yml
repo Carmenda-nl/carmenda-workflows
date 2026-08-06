@@ -57,6 +57,12 @@ jobs:
       - name: Remove beta tag locally for release notes generation
         run: git tag -d "${{ steps.determine_tag.outputs.beta_tag }}" || true
 
+      - name: Fetch shared changelog config
+        shell: bash
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/Carmenda-nl/carmenda-workflows/main/cliff.toml \
+            | sed "s#__REPO__#${{ github.repository }}#g" > cliff.toml
+
       - name: Get release notes
         id: release_notes
         uses: orhun/git-cliff-action@v4.8.0

@@ -9,9 +9,12 @@
 #       with:
 #         build-name: privacytool
 #         version: ${{ github.ref_name }}
-#         api-gateway-repo: Carmenda-nl/privacytool-api-gateway
+#         api-gateway-repo: privacytool-api-gateway
 #         engines: |
-#           [{"name": "carmenda-deduce-engine", "repo": "Carmenda-nl/carmenda-deduce-engine"}]
+#           [
+#             {"repo": "carmenda-deduce-engine", "appTitle": "Carmenda deduce engine", "default": true},
+#             {"repo": "deidentify-engine", "appTitle": "Carmenda deidentify engine"}
+#           ]
 #       secrets: inherit
 
 name: Beta release
@@ -25,24 +28,26 @@ on:
         default: app
       version:
         description: Release tag to publish
-        required: true
         type: string
+        required: true
       api-gateway-repo:
-        description: API gateway release to bundle
-        required: true
+        description: Name of the API gateway repo to bundle
         type: string
+        required: true
       engines:
         description: JSON array of engines to bundle
-        required: true
         type: string
+        required: true
 
 jobs:
   build-beta-windows:
     runs-on: windows-latest
     outputs:
-      tag: ${{ steps.meta.outputs.release_tag }}
-      # is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
-      # release_name: ${{ steps.meta.outputs.release_name }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
+      release_name: ${{ steps.meta.outputs.release_name }}
+      gateway_tag: ${{ steps.gateway.outputs.tag }}
+      engines_versions: ${{ steps.engines.outputs.versions }}
 
     steps:
       - name: Checkout code
@@ -77,34 +82,15 @@ jobs:
         run: |
           VERSION="${{ inputs.version }}"
           VERSION="${VERSION#v}"
+          VERSION="${VERSION%-beta}"
           pnpm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Generate production .env
         working-directory: ${{ inputs.build-name }}
         shell: bash
-        env:
-          ENGINES_JSON: ${{ inputs.engines }}
         run: |
           SECRET_KEY=$(openssl rand -base64 48)
           echo "::add-mask::$SECRET_KEY"
-
-          # Build ENGINES='{"<name>": {"url":..., "port":..., "m2m_hash":...}}',
-          # one entry per engine, ports assigned sequentially from 8001.
-          ENGINES="{}"
-          PORT=8001
-          while IFS= read -r engine; do
-            NAME=$(jq -r '.name' <<< "$engine")
-            M2M_HASH=$(openssl rand -hex 32)
-            echo "::add-mask::$M2M_HASH"
-
-            ENGINES=$(jq -c \
-              --arg name "$NAME" \
-              --arg port "$PORT" \
-              --arg hash "$M2M_HASH" \
-              '. + {($name): {url: "http://127.0.0.1", port: $port, m2m_hash: $hash}}' \
-              <<< "$ENGINES")
-            PORT=$((PORT + 1))
-          done < <(jq -c '.[]' <<< "$ENGINES_JSON")
 
           cat > .env <<EOF
           # ------------------------------- Gateway -------------------------------- #
@@ -115,17 +101,47 @@ jobs:
           GATEWAY_LOG_LEVEL=INFO
           GATEWAY_SECRET_KEY='$SECRET_KEY'
           GATEWAY_CSRF_TRUSTED_ORIGINS=http://127.0.0.1
-
-          # -------------------------------- Engines -------------------------------- #
-
-          ENGINES='$ENGINES'
           EOF
 
-      - name: Download API gateway (latest)
+      - name: Generate engines.json
         working-directory: ${{ inputs.build-name }}
         shell: bash
         env:
-          API_GATEWAY_REPO: ${{ inputs.api-gateway-repo }}
+          ENGINES_JSON: ${{ inputs.engines }}
+        run: |
+          ENGINES_OUT="[]"
+          PORT=8001
+          while IFS= read -r engine; do
+            NAME=$(jq -r '.repo' <<< "$engine")
+            APP_TITLE=$(jq -r '.appTitle' <<< "$engine")
+            IS_DEFAULT=$(jq -r '.default // false' <<< "$engine")
+
+            ENGINES_OUT=$(jq -c \
+              --arg id "$NAME" \
+              --argjson port "$PORT" \
+              --arg title "$APP_TITLE" \
+              --argjson default "$IS_DEFAULT" \
+              '. + [{id: $id, host: "127.0.0.1", port: $port, appTitle: $title, debug: false, logLevel: "INFO", default: $default}]' \
+              <<< "$ENGINES_OUT")
+            PORT=$((PORT + 1))
+          done < <(jq -c '.[]' <<< "$ENGINES_JSON")
+
+          echo "$ENGINES_OUT" | jq . > engines.json
+
+          DEFAULT_COUNT=$(jq '[.[] | select(.default == true)] | length' engines.json)
+          if [ "$DEFAULT_COUNT" -ne 1 ]; then
+            echo "Expected exactly one engine with \"default\": true in the engines input, found $DEFAULT_COUNT" >&2
+            exit 1
+          fi
+
+          cat engines.json
+
+      - name: Download API gateway
+        id: gateway
+        working-directory: ${{ inputs.build-name }}
+        shell: bash
+        env:
+          API_GATEWAY_REPO: ${{ github.repository_owner }}/${{ inputs.api-gateway-repo }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # "gh release download" without a tag only ever considers /releases/latest,
@@ -160,16 +176,24 @@ jobs:
           rm gateway.zip
           echo "API gateway downloaded and extracted"
 
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
       - name: Download engines (latest)
+        id: engines
         working-directory: ${{ inputs.build-name }}
         shell: bash
         env:
           ENGINES_JSON: ${{ inputs.engines }}
+          REPO_OWNER: ${{ github.repository_owner }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "$ENGINES_JSON" | jq -c '.[]' | while IFS= read -r engine; do
-            NAME=$(jq -r '.name' <<< "$engine")
-            REPO=$(jq -r '.repo' <<< "$engine")
+          # Process substitution (not a pipe into `while`) so the loop runs in
+          # the current shell — needed for VERSIONS to survive past the loop.
+          VERSIONS=""
+          while IFS= read -r engine; do
+            NAME=$(jq -r '.repo' <<< "$engine")
+            APP_TITLE=$(jq -r '.appTitle' <<< "$engine")
+            REPO="$REPO_OWNER/$NAME"
 
             # "gh release download" without a tag only ever considers /releases/latest,
             # which excludes prereleases — resolve manually so betas are picked up too.
@@ -202,7 +226,15 @@ jobs:
             unzip -q "$NAME.zip" -d "backend/engines/$NAME"
             rm "$NAME.zip"
             echo "Engine $NAME downloaded and extracted"
-          done
+
+            VERSIONS="$VERSIONS- $APP_TITLE: $TAG"$'\n'
+          done < <(jq -c '.[]' <<< "$ENGINES_JSON")
+
+          {
+            echo "versions<<EOFMARKER"
+            printf '%s' "$VERSIONS"
+            echo "EOFMARKER"
+          } >> $GITHUB_OUTPUT
 
       - name: Build and package Windows installer
         working-directory: ${{ inputs.build-name }}
@@ -244,88 +276,17 @@ jobs:
           path: signed-dist/*.exe
 
   create-release:
-    needs: build-windows
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7.0.0
-        with:
-          fetch-depth: 0
-
-      - name: Download build artifact
-        uses: actions/download-artifact@v8.0.1
-        with:
-          name: frontend-windows
-          path: signed
-
-      - name: Create zip archive
-        run: |
-          zip -j Privacytool_win_${{ needs.build-windows.outputs.release_tag }}.zip signed/*.exe
-          ls -lh *.zip
-
-      - name: Remove beta tag locally for release notes generation
-        if: contains(needs.build-windows.outputs.release_tag, '-beta')
-        run: git tag -d "${{ needs.build-windows.outputs.release_tag }}" || true
-
-      - name: Get release notes
-        id: release_notes
-        uses: orhun/git-cliff-action@v4.8.0
-        with:
-          config: cliff.toml
-          args: --unreleased --tag ${{ needs.build-windows.outputs.release_tag }} --strip header
-
-      - name: Read release notes
-        id: notes
-        shell: bash
-        run: |
-          BODY=$(cat git-cliff/CHANGELOG.md)
-          {
-            echo "body<<EOFMARKER"
-            echo ""
-            echo "$BODY"
-            echo "EOFMARKER"
-          } >> $GITHUB_OUTPUT
-
-      - name: Create release
-        uses: softprops/action-gh-release@v3.0.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ needs.build-windows.outputs.release_tag }}
-          name: ${{ needs.build-windows.outputs.release_name }}
-          body: ${{ steps.notes.outputs.body }}
-          prerelease: ${{ needs.build-windows.outputs.is_prerelease }}
-          draft: false
-          fail_on_unmatched_files: false
-          generate_release_notes: false
-          files: "*.zip"
-
-      - name: Check for existing changelog entry
-        id: changelog_check
-        shell: bash
-        run: |
-          VERSION="${{ needs.build-windows.outputs.release_tag }}"
-          VERSION="${VERSION#v}"
-          if grep -q "^## \[${VERSION}\]" CHANGELOG.md; then
-            echo "Entry for ${VERSION} already present, skipping changelog update"
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Update CHANGELOG.md
-        if: steps.changelog_check.outputs.exists == 'false'
-        uses: orhun/git-cliff-action@v4.8.0
-        with:
-          config: cliff.toml
-          args: --unreleased --tag ${{ needs.build-windows.outputs.release_tag }} --prepend CHANGELOG.md
-
-      - name: Commit CHANGELOG.md
-        if: steps.changelog_check.outputs.exists == 'false'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md
-          git diff --cached --quiet || git commit -m "chore(release): update CHANGELOG.md for ${{ needs.build-windows.outputs.release_tag }}"
-          git push origin HEAD:develop
+    needs: build-beta-windows
+    uses: ./.github/workflows/create-release.yml
+    with:
+      artifact-name: frontend-windows
+      zip-name: ${{ inputs.build-name }}_win_${{ needs.build-beta-windows.outputs.release_tag }}.zip
+      flatten: true
+      release-tag: ${{ needs.build-beta-windows.outputs.release_tag }}
+      release-name: ${{ needs.build-beta-windows.outputs.release_name }}
+      is-prerelease: ${{ needs.build-beta-windows.outputs.is_prerelease == 'true' }}
+      extra-notes: |
+        **Bundled versions**
+        - API gateway: ${{ needs.build-beta-windows.outputs.gateway_tag }}
+        ${{ needs.build-beta-windows.outputs.engines_versions }}
+    secrets: inherit
