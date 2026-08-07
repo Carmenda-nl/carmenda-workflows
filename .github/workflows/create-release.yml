@@ -41,7 +41,11 @@ on:
         type: string
         default: ""
       version-file:
-        description: If set, also write the tag into this file and include it in the changelog commit
+        description: If set, also write a version into this file and include it in the changelog commit
+        type: string
+        default: ""
+      version-value:
+        description: Value to write into version-file. Defaults to release-tag as-is; pass an override to write a different format (e.g. stripped of "v"/"-beta")
         type: string
         default: ""
       changelog-file:
@@ -157,7 +161,9 @@ jobs:
       - name: Update version file
         if: steps.changelog_check.outputs.exists == 'false' && inputs.version-file != ''
         shell: bash
-        run: printf '%s' "${{ inputs.release-tag }}" > "${{ inputs.version-file }}"
+        env:
+          VALUE: ${{ inputs.version-value != '' && inputs.version-value || inputs.release-tag }}
+        run: printf '%s' "$VALUE" > "${{ inputs.version-file }}"
 
       - name: Commit changelog
         if: steps.changelog_check.outputs.exists == 'false'

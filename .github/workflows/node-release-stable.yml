@@ -1,0 +1,157 @@
+# Reusable workflow: promote the latest beta release to a stable release for
+# a node/Electron app.
+#
+# Unlike python-release-stable.yml, this does not patch any file contents:
+# the release asset is a compiled NSIS setup.exe wrapped in a single-file
+# zip, whose embedded version metadata can't be changed without a full
+# rebuild (contrast with PyInstaller's plain directory output, which
+# python-release-stable.yml patches in place). Promoting does unzip/rezip
+# to strip "-beta" from the zip and the setup.exe filenames, then publishes
+# it as a non-prerelease under the stable tag and deletes the beta release/tag.
+#
+# Call from another repository:
+#
+#   on:
+#     pull_request:
+#       types: [closed]
+#       branches:
+#         - main
+#
+#   permissions:
+#     contents: write
+#
+#   jobs:
+#     promote-beta-to-stable:
+#       if: >-
+#         github.event.pull_request.merged == true &&
+#         github.event.pull_request.base.ref == 'main' &&
+#         github.event.pull_request.head.ref == 'develop'
+#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/node-release-stable.yml@main
+#       with:
+#         version-file: privacytool/VERSION
+#       secrets: inherit
+
+name: Promote Beta to Stable release
+
+on:
+  workflow_call:
+    inputs:
+      version-file:
+        description: Path to the VERSION file
+        type: string
+        required: true
+      changelog-file:
+        description: Path to the changelog file
+        type: string
+        default: CHANGELOG.md
+
+jobs:
+  promote-beta-to-stable:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Determine beta tag to promote
+        id: determine
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BETA_TAG=$(gh api repos/${{ github.repository }}/releases --jq '[.[] | select(.prerelease==true and (.tag_name | endswith("-beta")))] | sort_by(.created_at) | last | .tag_name')
+
+          if [ -z "$BETA_TAG" ] || [ "$BETA_TAG" = "null" ]; then
+            echo "::error::No beta release found to promote"
+            exit 1
+          fi
+
+          STABLE_TAG="${BETA_TAG%-beta}"
+          echo "beta_tag=$BETA_TAG" >> $GITHUB_OUTPUT
+          echo "stable_tag=$STABLE_TAG" >> $GITHUB_OUTPUT
+          echo "Will promote $BETA_TAG -> $STABLE_TAG"
+
+      - name: Verify VERSION file matches stable tag
+        env:
+          STABLE_TAG: ${{ steps.determine.outputs.stable_tag }}
+          VERSION_FILE: ${{ inputs.version-file }}
+        run: |
+          STABLE_VER="${STABLE_TAG#v}"
+          FILE_VERSION=$(cat "$VERSION_FILE")
+
+          if [ "$FILE_VERSION" != "$STABLE_VER" ]; then
+            echo "::error::$VERSION_FILE ($FILE_VERSION) does not match stable version ($STABLE_VER) - did 'Prepare stable version' run before this PR was merged?"
+            exit 1
+          fi
+
+      - name: Extract release notes from changelog
+        env:
+          STABLE_VER: ${{ steps.determine.outputs.stable_tag }}
+          CHANGELOG_FILE: ${{ inputs.changelog-file }}
+        run: |
+          STABLE_VER="${STABLE_VER#v}"
+
+          if ! grep -q "^## \[${STABLE_VER}\]" "$CHANGELOG_FILE"; then
+            echo "::error::No changelog entry found for [${STABLE_VER}] - did 'Prepare stable version' run before this PR was merged?"
+            exit 1
+          fi
+
+          awk -v ver="$STABLE_VER" '
+            $0 ~ "^## \\[" ver "\\]" { found=1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' "$CHANGELOG_FILE" > release_notes.md
+
+          cat release_notes.md
+
+      - name: Download, unzip and rename beta release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BETA_TAG: ${{ steps.determine.outputs.beta_tag }}
+          STABLE_TAG: ${{ steps.determine.outputs.stable_tag }}
+        run: |
+          mkdir -p assets
+          cd assets
+          gh release download "$BETA_TAG" -R ${{ github.repository }}
+
+          assets_dir=$(pwd)
+          for zip in *.zip; do
+            workdir=$(mktemp -d)
+            unzip -q "$zip" -d "$workdir"
+            for f in "$workdir"/*; do
+              new="${f//-beta/}"
+              [ "$f" = "$new" ] || mv "$f" "$new"
+            done
+
+            rm "$zip"
+            (cd "$workdir" && zip -j "$assets_dir/${zip//$BETA_TAG/$STABLE_TAG}" *)
+            rm -rf "$workdir"
+          done
+
+          ls -lh
+
+      - name: Create stable release
+        id: create_stable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STABLE_TAG: ${{ steps.determine.outputs.stable_tag }}
+        run: |
+          cd assets
+          gh release create "$STABLE_TAG" \
+            --title "Release $STABLE_TAG" \
+            --notes-file ../release_notes.md \
+            --target main \
+            --repo ${{ github.repository }} \
+            *.zip
+          echo "success=true" >> $GITHUB_OUTPUT
+
+      - name: Delete beta release and tag
+        if: steps.create_stable.outputs.success == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BETA_TAG: ${{ steps.determine.outputs.beta_tag }}
+        run: |
+          gh release delete "$BETA_TAG" -R ${{ github.repository }} --yes
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/$BETA_TAG" || echo "Tag already deleted"

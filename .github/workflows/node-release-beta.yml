@@ -7,8 +7,9 @@
 #     release:
 #       uses: Carmenda-nl/carmenda-workflows/.github/workflows/node-release-beta.yml@main
 #       with:
-#         build-name: privacytool
+#         build-name: app
 #         version: ${{ github.ref_name }}
+#         version-file: app/VERSION
 #         api-gateway-repo: privacytool-api-gateway
 #         engines: |
 #           [
@@ -30,6 +31,10 @@ on:
         description: Release tag to publish
         type: string
         required: true
+      version-file:
+        description: Path to the VERSION file. Overwritten before the build runs with the release tag (minus the leading "v", "-beta" kept as-is) so it can't go stale — electron-builder.config.ts reads it from there and strips "-beta" itself for the version embedded in the app.
+        type: string
+        required: true
       api-gateway-repo:
         description: Name of the API gateway repo to bundle
         type: string
@@ -46,6 +51,8 @@ jobs:
       release_tag: ${{ steps.meta.outputs.release_tag }}
       is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
       release_name: ${{ steps.meta.outputs.release_name }}
+      package_name: ${{ steps.meta.outputs.package_name }}
+      tag_version: ${{ steps.sync_version.outputs.tag_version }}
       gateway_tag: ${{ steps.gateway.outputs.tag }}
       engines_versions: ${{ steps.engines.outputs.versions }}
 
@@ -54,6 +61,17 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.version }}
+
+      - name: Sync VERSION file to release tag
+        id: sync_version
+        shell: bash
+        env:
+          TAG: ${{ inputs.version }}
+          VERSION_FILE: ${{ inputs.version-file }}
+        run: |
+          TAG_VERSION="${TAG#v}"
+          printf '%s' "$TAG_VERSION" > "$VERSION_FILE"
+          echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6.0.10
@@ -75,15 +93,6 @@ jobs:
       - name: Exclude backend folder from Windows Defender
         shell: powershell
         run: Add-MpPreference -ExclusionPath "${{ github.workspace }}\${{ inputs.build-name }}\backend"
-
-      - name: Set version from release tag
-        working-directory: ${{ inputs.build-name }}
-        shell: bash
-        run: |
-          VERSION="${{ inputs.version }}"
-          VERSION="${VERSION#v}"
-          VERSION="${VERSION%-beta}"
-          pnpm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Generate production .env
         working-directory: ${{ inputs.build-name }}
@@ -242,9 +251,17 @@ jobs:
 
       - name: Store build
         shell: bash
+        env:
+          TAG: ${{ inputs.version }}
         run: |
           mkdir -p signed-dist
           cp ${{ inputs.build-name }}/dist/*.exe signed-dist/
+
+          if [[ "$TAG" == *-beta ]]; then
+            for f in signed-dist/*.exe; do
+              mv "$f" "${f%.exe}-beta.exe"
+            done
+          fi
 
       - name: Determine release metadata
         id: meta
@@ -265,9 +282,12 @@ jobs:
             NAME="Release $TAG"
           fi
 
+          PACKAGE_NAME=$(jq -r '.name' "${{ inputs.build-name }}/package.json")
+
           echo "release_tag=$TAG" >> $GITHUB_OUTPUT
           echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
           echo "release_name=$NAME" >> $GITHUB_OUTPUT
+          echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7.0.1
@@ -280,11 +300,13 @@ jobs:
     uses: ./.github/workflows/create-release.yml
     with:
       artifact-name: frontend-windows
-      zip-name: ${{ inputs.build-name }}_win_${{ needs.build-beta-windows.outputs.release_tag }}.zip
+      zip-name: ${{ needs.build-beta-windows.outputs.package_name }}_win_${{ needs.build-beta-windows.outputs.release_tag }}.zip
       flatten: true
       release-tag: ${{ needs.build-beta-windows.outputs.release_tag }}
       release-name: ${{ needs.build-beta-windows.outputs.release_name }}
       is-prerelease: ${{ needs.build-beta-windows.outputs.is_prerelease == 'true' }}
+      version-file: ${{ inputs.version-file }}
+      version-value: ${{ needs.build-beta-windows.outputs.tag_version }}
       extra-notes: |
         **Bundled versions**
         - API gateway: ${{ needs.build-beta-windows.outputs.gateway_tag }}
