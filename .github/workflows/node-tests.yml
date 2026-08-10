@@ -1,13 +1,10 @@
-# Reusable workflow: lint, format check and type check a 
-# Node (pnpm) project.
+# GitHub shared Actions workflow
 #
-# Call from another repository:
+# Reusable workflow: lint, format and type check
+# a Node (pnpm) project.
 #
-#   jobs:
-#     tests:
-#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/node-tests.yml@main
-#       with:
-#         working-directory: privacytool
+# Triggered on:
+#   - Call from another repository
 
 name: Node tests
 
@@ -19,20 +16,25 @@ on:
         type: string
         required: true
 
+env:
+  CHECKOUT_ACTION: &checkout-action actions/checkout@v7.0.1
+  PNPM_SETUP_ACTION: &pnpm-setup-action pnpm/action-setup@v6.0.9
+  SETUP_NODE_ACTION: &setup-node-action actions/setup-node@v7.0.0
+
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: *checkout-action
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v6.0.9
+        uses: *pnpm-setup-action
         with:
           version: 10
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7.0.0
+        uses: *setup-node-action
         with:
           node-version: "24.x"
           check-latest: true

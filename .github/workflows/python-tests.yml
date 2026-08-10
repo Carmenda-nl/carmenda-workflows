@@ -1,13 +1,10 @@
+# GitHub shared Actions workflow
+#
 # Reusable workflow: lint, type check and test a Python (uv) project.
 # A coverage report will be uploaded as an artifact after tests run.
 #
-# Call from another repository:
-#
-#   jobs:
-#     tests:
-#       uses: Carmenda-nl/carmenda-workflows/.github/workflows/python-tests.yml@main
-#       with:
-#         working-directory: app
+# Triggered on:
+#   - Call from another repository
 
 name: Python tests
 
@@ -19,16 +16,20 @@ on:
         type: string
         default: app
       pre-test-command:
-        description: "Optional command to run before pytest (e.g. Django migrations)"
+        description: Optional command to run before test (e.g. Django migrations)
         type: string
         default: ""
+
+env:
+  CHECKOUT_ACTION: &checkout-action actions/checkout@v7.0.1
+  SETUP_UV_ACTION: &setup-uv-action astral-sh/setup-uv@v9.0.0
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: *checkout-action
 
       - name: Require .python-version file
         working-directory: ${{ inputs.working-directory }}
@@ -39,7 +40,7 @@ jobs:
           fi
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: &setup-uv-action astral-sh/setup-uv@v9.0.0
         with:
           working-directory: ${{ inputs.working-directory }}
 
@@ -65,10 +66,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: *checkout-action
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: *setup-uv-action
         with:
           enable-cache: true
           cache-dependency-glob: |
