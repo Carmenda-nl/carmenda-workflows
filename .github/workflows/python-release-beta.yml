@@ -46,7 +46,7 @@ jobs:
           printf '%s' "${{ github.ref_name }}" > ${{ inputs.version-file }}
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           working-directory: ${{ inputs.working-directory }}
 
@@ -59,7 +59,7 @@ jobs:
         run: uv run pyinstaller ../build.spec
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: ${{ inputs.build-name }}
           path: ${{ inputs.working-directory }}/dist/${{ inputs.build-name }}/

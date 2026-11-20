@@ -22,7 +22,7 @@ on:
 
 env:
   CHECKOUT_ACTION: &checkout-action actions/checkout@v7.0.1
-  SETUP_UV_ACTION: &setup-uv-action astral-sh/setup-uv@v9.0.0
+  SETUP_UV_ACTION: &setup-uv-action astral-sh/setup-uv@v10.3.3
 
 jobs:
   lint:
@@ -40,7 +40,7 @@ jobs:
           fi
 
       - name: Set up uv
-        uses: &setup-uv-action astral-sh/setup-uv@v9.0.0
+        uses: &setup-uv-action astral-sh/setup-uv@v10.3.3
         with:
           working-directory: ${{ inputs.working-directory }}
 
@@ -96,7 +96,7 @@ jobs:
           DEBUG: "False"
 
       - name: Upload coverage reports
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: coverage-reports

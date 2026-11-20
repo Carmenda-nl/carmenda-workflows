@@ -18,8 +18,8 @@ on:
 
 env:
   CHECKOUT_ACTION: &checkout-action actions/checkout@v7.0.1
-  PNPM_SETUP_ACTION: &pnpm-setup-action pnpm/action-setup@v6.0.9
-  SETUP_NODE_ACTION: &setup-node-action actions/setup-node@v7.0.0
+  PNPM_SETUP_ACTION: &pnpm-setup-action pnpm/action-setup@v6.1.1
+  SETUP_NODE_ACTION: &setup-node-action actions/setup-node@v7.1.0
 
 jobs:
   lint:

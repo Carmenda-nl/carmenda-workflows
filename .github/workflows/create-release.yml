@@ -68,7 +68,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download build artifact
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@v8.0.2
         with:
           name: ${{ inputs.artifact-name }}
           path: release-assets
@@ -100,7 +100,7 @@ jobs:
 
       - name: Get release notes
         id: release_notes
-        uses: orhun/git-cliff-action@v4.8.0
+        uses: orhun/git-cliff-action@v4.9.1
         with:
           config: cliff.toml
           args: --unreleased --tag ${{ inputs.release-tag }} --strip header
@@ -123,7 +123,7 @@ jobs:
           } >> $GITHUB_OUTPUT
 
       - name: Create release
-        uses: softprops/action-gh-release@v3.0.2
+        uses: softprops/action-gh-release@v3.0.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -153,7 +153,7 @@ jobs:
 
       - name: Update changelog
         if: steps.changelog_check.outputs.exists == 'false'
-        uses: orhun/git-cliff-action@v4.8.0
+        uses: orhun/git-cliff-action@v4.9.1
         with:
           config: cliff.toml
           args: --unreleased --tag ${{ inputs.release-tag }} --prepend ${{ inputs.changelog-file }}
