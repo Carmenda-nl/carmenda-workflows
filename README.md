@@ -8,7 +8,7 @@ Central repository for reusable GitHub Actions workflows used across Carmenda re
 
 Lints, type-checks and tests a Python project managed with [uv](https://github.com/astral-sh/uv). 
 Requires a `.python-version` file in the working directory. 
-Runs Ruff (check + format), Mypy, then pytest, and uploads the coverage report as an artifact.
+Runs Ruff (check + format), [ty](https://github.com/astral-sh/ty), then pytest, and uploads the coverage report as an artifact.
 
 **Inputs**
 
